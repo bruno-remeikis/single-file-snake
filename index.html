@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <style>
+        * {
+            margin: 0;
+        }
+        body {
+            height: 100vh;
+            font-family: sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+        .score-container {
+            font-size: 1.4rem;
+
+            & .score-label {
+                color: rgba(0, 0, 0, 0.6);
+            }
+        }
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="score-container">
+            <span class="score-label">Score:</span>
+            <span id="score">0</span>
+        </div>
+        <canvas id="canvas" width="600" height="450"></canvas>
+    </div>
+
+    <script>
+        const scoreElement = document.getElementById('score');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext("2d");
+
+        const cellSize = 10;
+        const canvasDimensions = {
+            width: canvas.width,
+            height: canvas.height,
+        };
+        const gameDimensions = {
+            width: Math.floor(canvasDimensions.width / cellSize) - 1,
+            height: Math.floor(canvasDimensions.height / cellSize) - 1,
+        }
+        const DIRECTION = {
+            UP: 0,
+            RIGHT: 1,
+            DOWN: 2,
+            LEFT: 3
+        }
+        let gameLoop = null;
+        const gameState = {
+            direction: DIRECTION.RIGHT,
+            loopTimeout: 800,
+            score: 0,
+        }
+
+        class EndGameException extends Error {
+
+        }
+
+        class GameObject {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+
+            overlaps(gameObject) {
+                return this.x === gameObject.x
+                    && this.y === gameObject.y
+            }
+        }
+
+        class Fruit extends GameObject {
+            constructor(x, y) {
+                super(x, y);
+            }
+
+            render() {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(
+                    this.x * cellSize,
+                    this.y * cellSize,
+                    cellSize,
+                    cellSize
+                );
+            }
+        }
+
+        class Snake {
+            constructor() {
+                this.direction = DIRECTION.RIGHT;
+                //this.parts = [ new SnakePart(0, 0, this.direction) ];
+                this.parts = [
+                    new SnakePart(4, 0, this.direction),
+                    new SnakePart(3, 0, this.direction),
+                    new SnakePart(2, 0, this.direction),
+                    new SnakePart(1, 0, this.direction),
+                    new SnakePart(0, 0, this.direction),
+                ];
+            }
+
+            get head() {
+                return this.parts[0];
+            }
+
+            get tail() {
+                return this.parts[this.parts.length - 1];
+            }
+
+            grow() {
+                this.parts.push( new SnakePart(this.head.x, this.head.y, null) );
+            }
+
+            update() {
+                
+                let part;
+                let next;
+                for (let i = this.parts.length - 1; i >= 1; i--) {
+                    part = this.parts[i];
+                    next = this.parts[i - 1];
+
+                    // Se a parte estiver ativa (ou seja, não estiver aguardando a calda (dicection !== null))
+                    // Ou estiver inativa, mas a calda tiver acabado de passar pelo inativo: ativa-a
+                    if (part.direction !== null || part.overlaps(next)) {
+                        part.direction = next.direction;
+                    }
+                    if (!part.overlaps(next)) {
+                        part.update();
+                    }
+                }
+
+                this.head.direction = gameState.direction;
+                this.head.update();
+
+                this.parts.forEach((part, i) => {
+                    if (i !== 0 && part.direction !== null && part.overlaps(this.head)) {
+                        throw new EndGameException();
+                    }
+                });
+            }
+
+            render() {
+                this.parts.forEach(part => {
+                    part.render();
+                });
+            }
+        }
+
+        class SnakePart extends GameObject {
+            constructor(x, y, direction) {
+                super(x, y);
+                // Se direction == null: a cobra acabou de comer uma fruta e esta parte ainda está sendo "ingerida"
+                this.direction = direction;
+            }
+
+            update() {
+                if (this.direction === null)
+                    return;
+
+                switch (this.direction) {
+                    case DIRECTION.UP:
+                        this.y--;
+                        break;
+                    case DIRECTION.RIGHT:
+                        this.x++;
+                        break;
+                    case DIRECTION.DOWN:
+                        this.y++;
+                        break;
+                    case DIRECTION.LEFT:
+                        this.x--;
+                        break;
+                }
+
+                if (this.x > gameDimensions.width)
+                    this.x = 0;
+                else if (this.x < 0)
+                    this.x = gameDimensions.width;
+                
+                if (this.y > gameDimensions.height)
+                    this.y = 0;
+                else if (this.y < 0)
+                    this.y = gameDimensions.height;
+            }
+
+            render () {
+                if (this.direction === null)
+                    return;
+
+                ctx.fillStyle = 'green';
+                ctx.fillRect(
+                    this.x * cellSize,
+                    this.y * cellSize,
+                    cellSize,
+                    cellSize
+                );
+            }
+        }
+
+        function updateGameScore() {
+            gameState.score++;
+            scoreElement.textContent = gameState.score;
+        }
+
+        document.addEventListener('keydown', function(event) {
+            switch (event.key.toUpperCase()) {
+                case 'W':
+                case 'ARROWUP':
+                    if (gameState.direction !== DIRECTION.DOWN) {
+                        gameState.direction = DIRECTION.UP;
+                    }
+                    break;
+                case 'D':
+                case 'ARROWRIGHT':
+                    if (gameState.direction !== DIRECTION.LEFT) {
+                        gameState.direction = DIRECTION.RIGHT;
+                    }
+                    break;
+                case 'S':
+                case 'ARROWDOWN':
+                    if (gameState.direction !== DIRECTION.UP) {
+                        gameState.direction = DIRECTION.DOWN;
+                    }
+                    break;
+                case 'A':
+                case 'ARROWLEFT':
+                    if (gameState.direction !== DIRECTION.RIGHT) {
+                        gameState.direction = DIRECTION.LEFT;
+                    }
+                    break;
+                case ' ':
+                    gameState.loopTimeout = 100;
+                    break;
+            }
+        });
+
+        function update(snake, fruit) {
+            ctx.clearRect(0, 0, canvasDimensions.width, canvasDimensions.height);
+
+            if (snake.head.overlaps(fruit)) {
+                updateGameScore();
+                snake.grow();
+
+                fruit = new Fruit(
+                    Math.floor(Math.random() * gameDimensions.width),
+                    Math.floor(Math.random() * gameDimensions.height)
+                );
+                
+                gameState.loopTimeout -= 30;
+                if (gameState.loopTimeout < 20)
+                    gameState.loopTimeout = 20;
+            }
+
+            try {
+                snake.update();
+
+                fruit.render();
+                snake.render();
+
+                gameLoop = setTimeout(() => update(snake, fruit), gameState.loopTimeout);
+            }
+            catch (e) {
+                if (e instanceof EndGameException) {
+                    alert('Fim de jogo!');
+                    start();
+                }
+            }
+            finally {
+                fruit.render();
+                snake.render();
+            }
+        }
+
+        function start() {
+            gameState.direction = DIRECTION.RIGHT;
+            gameState.loopTimeout = 800;
+            gameState.score = 0;
+
+            const snake = new Snake();
+            let fruit = new Fruit(1, 1);
+
+            // Game loop
+            update(snake, fruit);
+        }
+
+        start();
+    </script>
+</body>
+</html>
